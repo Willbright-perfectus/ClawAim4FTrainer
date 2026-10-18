@@ -57,11 +57,33 @@ func run() -> void:
 	check(clean.aim.gyro=="Off" and clean.movement.gravity==5,"Unknown modes and invalid gravity are sanitized")
 	check(clean.hud.fire.x==0.97 and clean.hud.fire.visible,"HUD bounds and strict booleans are validated")
 	check(Schema.sanitize(null)==Schema.defaults(),"Non-object profile falls back safely")
+	var legacy = Schema.defaults()
+	legacy.schema_version = 1
+	legacy.erase("pistol")
+	legacy.aim.hip_turn = 333
+	legacy.aim.scope_2 = 0.77
+	legacy.movement.acceleration = 22
+	legacy.movement.prone_time = 0.61
+	legacy.hud.reload.x = 0.42
+	legacy.movement.erase("pace")
+	var migrated = Schema.sanitize(legacy)
+	check(migrated.aim.fire_hip_turn==333 and migrated.aim.fire_scope_2==0.77 and migrated.hud.reload.x==0.42,"Version 1 migration preserves sensitivity and HUD, seeds matching fire sensitivity")
+	check(migrated.movement.pace==1.25 and migrated.movement.acceleration==36 and migrated.movement.prone_time==0.61,"Movement migration improves untouched defaults and preserves custom stance timing")
+	var a = Schema.defaults().aim
+	a.swipe_gain = 1.5
+	a.fire_hip_turn = 120
+	a.fire_ads_turn = 90
+	a.fire_scope_2 = 0.4
+	check(is_equal_approx(Math.turn_gain(a,0,false),360) and is_equal_approx(Math.turn_gain(a,0,false,true),180),"Swipe multiplier composes with independent camera and fire sensitivities")
+	check(is_equal_approx(Math.turn_gain(a,1,true,true,2),54) and is_equal_approx(Math.turn_gain(a,1,true,true,1),135),"Fire sensitivity selects correct scope, with separate 1× pistol response")
 	Profiles.data = Schema.defaults()
 	var before = Profiles.export_text()
 	check(not Profiles.import_text("{").is_empty() and Profiles.export_text()==before,"Invalid JSON leaves active configuration unchanged")
 	check(not Profiles.import_text('{"schema_version":999,"weapon":{}}').is_empty(),"Unsupported profile versions are rejected")
 	check(Profiles.import_text(before).is_empty(),"Profile JSON round-trip succeeds")
+	check(Profiles.import_text(JSON.stringify(legacy)).is_empty() and Profiles.data.schema_version==2,"Version 1 JSON imports through compatible migration")
+	Profiles.data = Schema.defaults()
+	Profiles.save()
 	Profiles.data.weapon.damage = 51
 	check(Profiles.save(),"Atomic profile save succeeds")
 	var f = FileAccess.open(Profiles.PATH,FileAccess.WRITE)
@@ -94,6 +116,30 @@ func run() -> void:
 	check(p.try_mantle(),"Mantle finds a low obstacle with free standing clearance")
 	await ticks(100)
 	check(p.position.y>0.65 and p.position.z<3.0,"Mantle traverses obstacle using collision-aware motion")
+	await create_arena()
+	p = arena.player
+	p.position = Vector3(0,0.03,15)
+	p.set_movement(Vector2.RIGHT)
+	await ticks(40)
+	check(absf(p.velocity.x-3.32*1.25)<0.05,"Default full-stick walk reaches 25 percent faster movement pace")
+	p.set_movement(Vector2.ZERO)
+	p.position = Vector3(0,0.03,8)
+	p.velocity = Vector3.ZERO
+	await ticks(10)
+	p.jump()
+	p.set_movement(Vector2.UP)
+	await ticks(150)
+	check(p.position.z>7.1,"Firing-line barrier stops walking and jumping into dummy bay")
+	check(not p.try_mantle(),"Firing-line barrier cannot be vaulted")
+	p.set_stance("prone")
+	await ticks(120)
+	check(p.position.z>7.1,"Prone player cannot crawl through the range barrier")
+	p.set_movement(Vector2.ZERO)
+	p.position = Vector3(-8.5,0.03,-10)
+	p.velocity = Vector3.ZERO
+	p.set_movement(Vector2.RIGHT)
+	await ticks(150)
+	check(p.position.x < -7.8,"Side partition prevents entering dummy bay through movement area")
 	await create_arena()
 	p = arena.player
 	hud.pointer_down(0,hud.button_center("move"))
@@ -165,6 +211,48 @@ func run() -> void:
 	p.on_action("fire",false)
 	await ticks(60)
 	check(arena.shots==shots_before+1,"Quick ADS retains a released single shot until ADS is ready")
+	await create_arena()
+	p = arena.player
+	p.ammo = 19
+	p.start_reload()
+	check(p.reload_left>0 and p.reload_total==Profiles.data.weapon.reload,"M14 exposes reload countdown and duration for button overlay")
+	p.on_action("switch",true)
+	p.on_action("switch",false)
+	await ticks(100)
+	check(p.weapon_slot=="Pistol" and p.reload_left==0,"Switch equips real pistol and cancels M14 reload")
+	shots_before = arena.shots
+	p.on_action("fire",true)
+	await ticks(120)
+	check(arena.shots==shots_before+1,"Holding pistol FIRE produces exactly one bullet")
+	p.on_action("fire",false)
+	for i in range(40):
+		p.on_action("fire",true)
+		await ticks(24)
+		p.on_action("fire",false)
+	check(arena.shots==shots_before+41 and p.ammo==1 and p.reload_left==0,"Repeated pistol taps have unlimited ammo without automatic reload")
+	p.start_reload()
+	check(p.reload_left==0,"Pistol ignores manual reload")
+	Profiles.data.pistol.mode = "Auto"
+	p.on_action("fire",true)
+	await ticks(100)
+	p.on_action("fire",false)
+	check(arena.shots==shots_before+42,"Pistol remains single-shot even if a runtime config requests auto")
+	p.on_action("switch",true)
+	p.on_action("switch",false)
+	await ticks(100)
+	check(p.weapon_slot=="M14" and p.ammo==19,"Switch back restores M14 ammunition without granting a free reload")
+	Profiles.data.aim.scope = "2×"
+	p.on_action("ads",true)
+	await ticks(45)
+	var fov2 = p.camera.fov
+	for i in range(4):
+		p.on_action("scope",true)
+		p.on_action("scope",false)
+		await ticks(2)
+	check(p.magnification()==8 and p.camera.fov<fov2*0.4,"M14 scope button cycles through 2× to 8× with real optical zoom")
+	p.switch_weapon()
+	await ticks(100)
+	check(p.magnification()==1 and p.camera.fov>fov2,"Pistol uses iron sights instead of inheriting M14 magnification")
 	await create_arena("Tracking")
 	p = arena.player
 	var target = arena.targets[0]
@@ -175,6 +263,15 @@ func run() -> void:
 	await ticks(4)
 	check(arena.hits==1,"Segment collision detects a high-speed projectile crossing a thin target")
 	check(target.health<100,"Projectile collision applies damage to the target")
+	target.health = 100
+	var shot_weapon = Profiles.data.weapon.duplicate(true)
+	shot_weapon.damage = 17
+	shot_weapon.bullet_gravity = 0
+	arena.spawn_bullet(start,(aim-start).normalized(),30,shot_weapon)
+	shot_weapon.damage = 99
+	p.switch_weapon()
+	await ticks(100)
+	check(is_equal_approx(target.health,83),"In-flight bullet retains launch damage after weapon changes, and passes barrier")
 	var elapsed_before = arena.elapsed
 	arena.set_paused(true)
 	await ticks(30)

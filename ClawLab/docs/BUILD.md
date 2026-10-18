@@ -30,9 +30,9 @@ export GODOT_ANDROID_KEYSTORE_RELEASE_USER=androiddebugkey
 export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=android
 mkdir -p build
 godot --headless --path . --export-release Android \
-  build/ClawLab-0.1.0-android-arm64.apk
+  build/ClawLab-0.2.0-android-arm64.apk
 ANDROID_HOME=/your/android/sdk python3 ci/verify_apk.py \
-  build/ClawLab-0.1.0-android-arm64.apk
+  build/ClawLab-0.2.0-android-arm64.apk
 ```
 
 The engine uses a release template, signed with a testing certificate. Do not publish the preview certificate as a production identity. Preserve one owner-controlled release key before shipping updates to customers or an app store. No keystore, APK, SDK, engine binary or local user profile belongs in this source repository.

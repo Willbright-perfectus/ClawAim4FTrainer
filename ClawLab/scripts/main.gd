@@ -3,6 +3,7 @@ extends Node
 const Schema = preload("res://scripts/config_schema.gd")
 const Arena = preload("res://scripts/arena.gd")
 const Hud = preload("res://scripts/touch_hud.gd")
+const TouchScroll = preload("res://scripts/touch_scroll.gd")
 const BG = Color("0c151e")
 const PANEL = Color("14232e")
 const BORDER = Color("2b414d")
@@ -30,6 +31,10 @@ var desktop_capture = false
 var keys: Dictionary = {}
 var app_theme: Theme
 var test_mode = false
+var nav_scroll: ScrollContainer
+var nav_offset = 0
+var sensitivity_category = "Swipe sensitivity"
+var weapon_editor = "M14"
 
 func _ready() -> void:
 	test_mode = "--test-ui" in OS.get_cmdline_user_args()
@@ -97,6 +102,7 @@ func button(text: String, action: Callable, accent: bool = false) -> Button:
 	b.text = text
 	b.custom_minimum_size.y = 48
 	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_filter = Control.MOUSE_FILTER_PASS
 	# Change screens after the current GUI input traversal has completed.
 	b.pressed.connect(action, CONNECT_DEFERRED)
 	if accent:
@@ -111,6 +117,7 @@ func panel(parent: Node, color: Color = PANEL) -> PanelContainer:
 	return p
 
 func clear_ui() -> void:
+	if is_instance_valid(nav_scroll): nav_offset = nav_scroll.scroll_vertical
 	for c in ui.get_children():
 		ui.remove_child(c)
 		c.queue_free()
@@ -168,7 +175,8 @@ func show_page(next_page: String) -> void:
 	brand.add_child(brand_name)
 	nav.add_child(label("MOBILE AIM STUDIO", 12, MUTED))
 	nav.add_child(HSeparator.new())
-	var nav_scroll = ScrollContainer.new()
+	nav_scroll = TouchScroll.new()
+	nav_scroll.name = "SidebarScroll"
 	nav_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	nav_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	nav.add_child(nav_scroll)
@@ -176,6 +184,7 @@ func show_page(next_page: String) -> void:
 	nav_items.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nav_items.add_theme_constant_override("separation", 5)
 	nav_scroll.add_child(nav_items)
+	nav_scroll.set_deferred("scroll_vertical",nav_offset)
 	for item in ["Train","Weapon","Aim","Controls","Movement","HUD editor","Drill setup","Performance","Profiles","History","About"]:
 		var callback = edit_hud if item == "HUD editor" else show_page.bind(item)
 		var b = button(item, callback, item == page)
@@ -183,7 +192,7 @@ func show_page(next_page: String) -> void:
 		b.custom_minimum_size.y = 42
 		b.add_theme_font_size_override("font_size", 18)
 		nav_items.add_child(b)
-	nav.add_child(label("v0.1.0  •  OFFLINE", 12, MUTED))
+	nav.add_child(label("v0.2.0  •  OFFLINE", 12, MUTED))
 	var right = VBoxContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	layout.add_child(right)
@@ -196,7 +205,8 @@ func show_page(next_page: String) -> void:
 	profile_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	profile_tag.custom_minimum_size.x = 300
 	header.add_child(profile_tag)
-	var scroll = ScrollContainer.new()
+	var scroll = TouchScroll.new()
+	scroll.name = "ContentScroll"
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	right.add_child(scroll)
@@ -255,16 +265,52 @@ func build_home() -> void:
 		col.add_child(button("Start  →",start_session.bind(name_drill)))
 
 func build_settings(group: String) -> void:
+	var edit_group = group
 	var notes = {
-		"weapon":"The M14 preset uses values from your screenshots. Recoil curves, spread growth and the armor model are adjustable trainer approximations.",
-		"aim":"Sensitivity uses degrees per full-width swipe. Delta Force sensitivity numbers are not interchangeable: use Calibration to match a measured 360° turn.",
+		"weapon":"Choose M14 or Training pistol. Tap SWITCH in the range to swap. Pistol: one shot per press, unlimited ammo, no reload. M14 optics: 1× to 8×.",
+		"aim":"Swipe sets the overall touch response. Camera controls aiming when not firing. Fire controls aiming while firing. Values use degrees per full-width swipe; calibrate them against your game.",
 		"controls":"Hold = active while pressed. Press = tap to toggle. Hybrid = tap to toggle, hold momentarily. A separate aiming finger has priority over button camera turning.",
-		"movement":"Walk, sprint and ADS speeds come from the M14 screenshots. Other physics are editable approximations; exact Delta Force movement constants are not public.",
+		"movement":"Movement now defaults to 1.25× pace with quicker acceleration, lean and stance changes. Set pace to 1.0 for the original speeds. All movement physics remain editable trainer approximations.",
 		"drill":"Use the same seed, target settings and weapon profile to compare sessions. Armor is a simplified trainer model; it does not reproduce Delta Force armor classes.",
 		"performance":"Start at 60 FPS. Higher limits require device testing. Lower rendering resolution reduces GPU load. The overlay reports actual frame time, not just the selected limit."
 	}
 	content.add_child(label(notes[group],18,MUTED))
+	if group == "weapon":
+		var tabs = HBoxContainer.new()
+		content.add_child(tabs)
+		for slot in ["M14", "Pistol"]:
+			tabs.add_child(button(slot,func(): weapon_editor = slot; show_page("Weapon"),weapon_editor == slot))
+		edit_group = "pistol" if weapon_editor == "Pistol" else "weapon"
+		content.add_child(button("Start with " + weapon_editor + ("  ✓" if Profiles.data.selected_weapon == weapon_editor else ""),func(): Profiles.data.selected_weapon = weapon_editor; mark_dirty(); show_page("Weapon"),true))
+		if weapon_editor == "M14":
+			var optic_row = HBoxContainer.new()
+			content.add_child(optic_row)
+			var title = label("M14 optic",20,MINT)
+			title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			optic_row.add_child(title)
+			var optic = OptionButton.new()
+			for scope in Schema.SCOPES: optic.add_item(scope)
+			optic.select(Schema.SCOPES.find(Profiles.data.aim.scope))
+			optic.custom_minimum_size = Vector2(275,48)
+			optic.item_selected.connect(func(n): Profiles.data.aim.scope = Schema.SCOPES[n]; mark_dirty())
+			optic_row.add_child(optic)
+		else:
+			content.add_child(label("SINGLE SHOT  /  ∞ AMMO  /  NO RELOAD  /  1× IRON SIGHTS",18,MINT))
+	if group == "aim":
+		var tabs = HBoxContainer.new()
+		content.add_child(tabs)
+		for category in ["Swipe sensitivity","Camera sensitivity","Fire sensitivity","View & gyro"]:
+			tabs.add_child(button(category,func(): sensitivity_category = category; show_page("Aim"),sensitivity_category == category))
+		var explain = {
+			"Swipe sensitivity":"Overall multiplier, vertical response and touch acceleration. These apply to both camera and firing sensitivity.",
+			"Camera sensitivity":"Hip / ADS sensitivity when not firing. Each scope has its own multiplier. Pistol always uses the 1× ADS value.",
+			"Fire sensitivity":"Independent hip / ADS / scope response while FIRE is held or a shot is being fired. Recoil compensation can use a different response from target acquisition.",
+			"View & gyro":"Choose FOV, M14 optic, reticle, aim slowdown and optional gyroscope. Scope can also be changed from Weapon or the range HUD."
+		}
+		content.add_child(label(explain[sensitivity_category],18,MINT))
 	for f in Schema.GROUPS[group]:
+		if group == "weapon" and edit_group == "pistol" and f[0] in ["magazine","mode","burst_count","reload","empty_reload","vertical_recoil","horizontal_recoil"]: continue
+		if group == "aim" and not sensitivity_field_visible(f[0]): continue
 		var row = HBoxContainer.new()
 		row.custom_minimum_size.y = 52
 		content.add_child(row)
@@ -272,13 +318,13 @@ func build_settings(group: String) -> void:
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(name_label)
-		var value = Profiles.data[group][f[0]]
+		var value = Profiles.data[edit_group][f[0]]
 		var key = f[0]
 		var field: Control
 		if f[2] is bool:
 			var check = CheckButton.new()
 			check.button_pressed = value
-			check.toggled.connect(func(v): Profiles.data[group][key] = v; mark_dirty())
+			check.toggled.connect(func(v): Profiles.data[edit_group][key] = v; mark_dirty())
 			field = check
 		elif f.size()==6:
 			var spin = SpinBox.new()
@@ -286,7 +332,7 @@ func build_settings(group: String) -> void:
 			spin.max_value = f[4]
 			spin.step = f[5]
 			spin.value = value
-			spin.value_changed.connect(func(v): Profiles.data[group][key] = v; mark_dirty())
+			spin.value_changed.connect(func(v): Profiles.data[edit_group][key] = v; mark_dirty())
 			field = spin
 		elif f.size()==4:
 			var options = OptionButton.new()
@@ -294,18 +340,27 @@ func build_settings(group: String) -> void:
 			for choice in choices:
 				options.add_item(choice)
 			options.select(maxi(0,choices.find(value)))
-			options.item_selected.connect(func(n): Profiles.data[group][key] = choices[n]; mark_dirty())
+			options.item_selected.connect(func(n): Profiles.data[edit_group][key] = choices[n]; mark_dirty())
 			field = options
 		else:
 			var edit = LineEdit.new()
 			edit.text = str(value)
 			edit.max_length = 64
-			edit.text_changed.connect(func(v): Profiles.data[group][key] = v; mark_dirty())
+			edit.text_changed.connect(func(v): Profiles.data[edit_group][key] = v; mark_dirty())
 			field = edit
 		field.custom_minimum_size = Vector2(275,48)
 		row.add_child(field)
 		content.add_child(HSeparator.new())
 	content.add_child(button("Test in Free Range  →",start_session.bind("Free Range"),true))
+
+func sensitivity_field_visible(key: String) -> bool:
+	var swipe = ["swipe_gain","vertical","acceleration","accel_strength"]
+	var camera_keys = ["hip_turn","ads_turn","scope_2","scope_3","scope_4","scope_6","scope_8","transition"]
+	match sensitivity_category:
+		"Swipe sensitivity": return key in swipe
+		"Camera sensitivity": return key in camera_keys
+		"Fire sensitivity": return key.begins_with("fire_")
+	return key not in swipe and key not in camera_keys and not key.begins_with("fire_")
 
 func build_profiles() -> void:
 	content.add_child(label("Profiles save your complete HUD, weapon, controls and physics. Export JSON to move a setup between devices.",19,MUTED))
@@ -413,7 +468,7 @@ func build_about() -> void:
 	content.add_child(label("Use Calibration to match your 360° swipe and FOV. Set the same FPS and sensitivity modes as your game. Run the Movement Course and adjust jump height, gravity, stance timing and lean distance. Check sustained frame times on your own phone.",19,MUTED))
 	content.add_child(label("Desktop testing",23,AMBER))
 	content.add_child(label("F1 captures/releases the mouse. WASD moves; Shift toggles sprint; Space jumps; C crouches; Z goes prone; Q/E lean; R reloads; right mouse aims; left mouse fires; Esc pauses. Touch controls remain the primary input.",19,MUTED))
-	content.add_child(label("Version 0.1.0 • Godot 4.5.1 • Original procedural assets • No accounts, ads or network access. Not affiliated with Delta Force, Team Jade, TiMi, Garena or Aimlabs. See the repository for research, tests and third-party notices.",16,MUTED))
+	content.add_child(label("Version 0.2.0 • Godot 4.5.1 • Original procedural assets • No accounts, ads or network access. Not affiliated with Delta Force, Team Jade, TiMi, Garena or Aimlabs. See the repository for research, tests and third-party notices.",16,MUTED))
 	content.add_child(button("Engine and third-party licenses",func():
 		var box = modal("Engine and third-party licenses",Vector2(1050,550))
 		var licenses = TextEdit.new()
@@ -659,6 +714,7 @@ func _notification(what: int) -> void:
 
 func run_ui_capture() -> void:
 	# Manual QA harness: only enabled by the explicit desktop argument.
+	Profiles.data = Schema.defaults()
 	var destination = OS.get_environment("CLAWLAB_CAPTURE_DIR")
 	if destination.is_empty(): destination = "/tmp/clawlab-captures"
 	DirAccess.make_dir_recursive_absolute(destination)
@@ -667,10 +723,36 @@ func run_ui_capture() -> void:
 		await get_tree().create_timer(0.3).timeout
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(destination+"/"+item.to_lower()+".png")
+	for category in ["Swipe sensitivity","Camera sensitivity","Fire sensitivity"]:
+		sensitivity_category = category
+		show_page("Aim")
+		await get_tree().create_timer(0.2).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(destination+"/"+category.replace(" ","-")+".png")
+	weapon_editor = "Pistol"
+	show_page("Weapon")
+	await get_tree().create_timer(0.2).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(destination+"/pistol-settings.png")
 	start_session("Free Range")
 	await get_tree().create_timer(0.8).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(destination+"/range.png")
+	world.player.ammo = 10
+	world.player.start_reload()
+	await get_tree().create_timer(0.5).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(destination+"/reload.png")
+	world.player.reload_left = 0
+	world.player.on_action("ads",true)
+	await get_tree().create_timer(0.4).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(destination+"/scope.png")
+	world.player.on_action("ads",false)
+	world.player.switch_weapon()
+	await get_tree().create_timer(0.9).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(destination+"/pistol.png")
 	edit_hud()
 	await get_tree().create_timer(0.3).timeout
 	await RenderingServer.frame_post_draw

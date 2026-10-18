@@ -2,10 +2,11 @@
 
 ## Completed in the build environment
 
-- **48/48 simulation/storage checks and 5/5 graphical touch/UI checks passed**, with no script/runtime errors in their logs.
+- **Version 0.2.0: 68/68 simulation/storage checks and 13/13 graphical touch/UI checks passed**, with no script/runtime errors in their logs.
+- New checks cover faster movement pace, version 1 profile migration, separate firing sensitivity, single-shot unlimited-ammo pistol, retained M14 ammo, no pistol reload, real scope zoom, in-flight weapon snapshots, blocked jump/prone/vault/side access to the dummy bay, touch scrolling from buttons, tap-after-swipe, preserved sidebar position and sensitivity/weapon tabs.
 - Godot 4.5.1 imported and ran the project.
 - Behavioral checks cover malformed profiles, backup recovery, hit-zone damage, projectile falloff, jump apex/landing, prone collision, ceiling clearance, mantle clearance/traversal, independent multi-touch ownership, cancel/release handling, configured fire rate, ammunition/reload timing, release-fire/quick ADS, high-speed swept hits, pause/resume, all ten drill startups and bounded sustained-fire pools.
-- Rendered menu, settings, training range and HUD editor screenshots were inspected at 1440×648 using Mesa software OpenGL. This caught and corrected wrapped sidebar branding and inaccessible HUD-editor controls.
+- Rendered menu, sensitivity categories, weapon tabs, reload button countdown, scoped ADS, pistol, training range and HUD editor screenshots were inspected at 1440×648 using Mesa software OpenGL.
 - APK validation checks package identity, ARM64 contents, API levels, absence of network/microphone/storage permissions, excluded development resources, bundled engine licenses, archive integrity and signature verification.
 
 Machine-readable results are in `qa/test-results.json` and `qa/ui-results.json`; `build-manifest.json` accompanies the APK. GitHub Actions generates fresh reports for each build. Software-rendered desktop FPS is not a phone benchmark.

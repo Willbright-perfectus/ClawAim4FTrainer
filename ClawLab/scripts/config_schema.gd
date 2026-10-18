@@ -2,7 +2,15 @@ extends RefCounted
 ## All unsourced physical constants are editable trainer approximations.
 ## Each field is [key, label, default, min, max, step] or [key, label, default, choices].
 
-const VERSION = 1
+const VERSION = 2
+const SCOPES = ["1×", "2×", "3×", "4×", "6×", "8×"]
+const PISTOL_OVERRIDES = {
+	"name":"Training pistol", "damage":35.0, "head_damage":70.0,
+	"abdomen_damage":30.0, "limb_damage":20.0, "rpm":360.0,
+	"mode":"Single", "magazine":1.0, "velocity":400.0,
+	"ads_ms":160.0, "holster":0.18, "switch_time":0.22,
+	"base_kick":0.45, "hip_spread":0.5, "max_spread":2.0, "ads_spread":0.03
+}
 const GROUPS = {
 	"weapon": [
 		["name", "Weapon / loadout name", "M14 • Willbright"],
@@ -54,16 +62,24 @@ const GROUPS = {
 		["prone_spread", "Prone spread multiplier (approx.)", 0.6, 0.1, 2, 0.05]
 	],
 	"aim": [
+		["swipe_gain", "Swipe sensitivity · overall multiplier", 1.0, 0.1, 3, 0.01],
 		["fov", "Horizontal field of view · degrees", 94.0, 60, 120, 1],
 		["hip_turn", "Hip turn · degrees per full-width swipe", 240.0, 30, 1080, 1],
 		["ads_turn", "ADS 1× turn · degrees per full-width swipe", 135.0, 10, 720, 1],
 		["vertical", "Vertical sensitivity multiplier", 1.0, 0.1, 3, 0.01],
-		["scope", "Scope magnification", "1×", ["1×", "2×", "3×", "4×", "6×", "8×"]],
+		["scope", "M14 optic magnification", "2×", SCOPES],
 		["scope_2", "2× sensitivity multiplier", 0.65, 0.05, 3, 0.01],
 		["scope_3", "3× sensitivity multiplier", 0.45, 0.05, 3, 0.01],
 		["scope_4", "4× sensitivity multiplier", 0.35, 0.05, 3, 0.01],
 		["scope_6", "6× sensitivity multiplier", 0.24, 0.05, 3, 0.01],
 		["scope_8", "8× sensitivity multiplier", 0.18, 0.05, 3, 0.01],
+		["fire_hip_turn", "Firing hip turn · degrees/full-width swipe", 240.0, 30, 1080, 1],
+		["fire_ads_turn", "Firing ADS 1× turn · degrees/full-width swipe", 135.0, 10, 720, 1],
+		["fire_scope_2", "Firing 2× sensitivity multiplier", 0.65, 0.05, 3, 0.01],
+		["fire_scope_3", "Firing 3× sensitivity multiplier", 0.45, 0.05, 3, 0.01],
+		["fire_scope_4", "Firing 4× sensitivity multiplier", 0.35, 0.05, 3, 0.01],
+		["fire_scope_6", "Firing 6× sensitivity multiplier", 0.24, 0.05, 3, 0.01],
+		["fire_scope_8", "Firing 8× sensitivity multiplier", 0.18, 0.05, 3, 0.01],
 		["transition", "Sensitivity transition", "Instant", ["Instant", "After ADS", "Gradual"]],
 		["acceleration", "Touch acceleration", false],
 		["accel_strength", "Acceleration strength (trainer curve)", 0.35, 0, 2, 0.05],
@@ -79,6 +95,7 @@ const GROUPS = {
 		["reticle_color", "Crosshair color", "Mint", ["Mint", "White", "Amber", "Pink"]]
 	],
 	"controls": [
+		["joystick_reach", "Joystick travel to full speed · radius fraction", 0.52, 0.3, 1, 0.01],
 		["mode", "Game-mode profile", "Operations", ["Operations", "Warfare"]],
 		["ads_mode", "ADS input", "Hold", ["Hold", "Press", "Hybrid"]],
 		["lean_mode", "Lean input", "Hold", ["Hold", "Press", "Hybrid"]],
@@ -109,6 +126,7 @@ const GROUPS = {
 		["sound", "Training sound effects", true]
 	],
 	"movement": [
+		["pace", "Movement pace multiplier · 1.0 = original speeds", 1.25, 0.5, 2, 0.05],
 		["walk", "Walk speed · m/s", 3.32, 0.2, 12, 0.01],
 		["sprint", "Sprint speed · m/s", 5.9, 0.2, 18, 0.1],
 		["ads_walk", "ADS movement speed · m/s", 1.9, 0.1, 10, 0.01],
@@ -116,21 +134,21 @@ const GROUPS = {
 		["prone", "Prone crawl speed · m/s (approx.)", 0.75, 0.1, 5, 0.05],
 		["silent", "Silent walk speed · m/s (approx.)", 1.25, 0.1, 5, 0.05],
 		["tactical", "Tactical sprint multiplier (approx.)", 1.15, 1, 2, 0.01],
-		["acceleration", "Ground acceleration · m/s² (approx.)", 22.0, 2, 70, 0.5],
+		["acceleration", "Ground acceleration · m/s² (approx.)", 36.0, 2, 70, 0.5],
 		["air_control", "Air control fraction (approx.)", 0.18, 0, 1, 0.01],
 		["gravity", "Character gravity · m/s² (approx.)", 18.0, 5, 40, 0.1],
 		["jump_height", "Jump height · m (approx.)", 0.75, 0.15, 2, 0.01],
 		["jump_cooldown", "Jump cooldown · seconds (approx.)", 0.25, 0, 2, 0.01],
 		["repeat_jump_penalty", "Repeat-jump height penalty (approx.)", 0.12, 0, 0.4, 0.01],
-		["stance_time", "Crouch transition · seconds (approx.)", 0.2, 0.05, 1, 0.01],
-		["prone_time", "Prone transition · seconds (approx.)", 0.38, 0.05, 1.5, 0.01],
+		["stance_time", "Crouch transition · seconds (approx.)", 0.14, 0.05, 1, 0.01],
+		["prone_time", "Prone transition · seconds (approx.)", 0.27, 0.05, 1.5, 0.01],
 		["lean_distance", "Lean camera offset · m (approx.)", 0.23, 0, 0.45, 0.01],
 		["lean_angle", "Lean angle · degrees (approx.)", 9.0, 0, 20, 0.5],
-		["lean_time", "Lean transition · seconds (approx.)", 0.13, 0.03, 0.6, 0.01],
+		["lean_time", "Lean transition · seconds (approx.)", 0.09, 0.03, 0.6, 0.01],
 		["mantle", "Allow mantling", true],
 		["auto_mantle", "Automatically mantle while moving forward", false],
 		["mantle_height", "Maximum mantle height · m (approx.)", 1.25, 0.3, 2, 0.05],
-		["mantle_time", "Mantle duration · seconds (approx.)", 0.6, 0.2, 1.5, 0.05],
+		["mantle_time", "Mantle duration · seconds (approx.)", 0.45, 0.2, 1.5, 0.05],
 		["dive", "Warfare: sprint + prone dives", true],
 		["dive_speed", "Dive speed multiplier (approx.)", 1.15, 0.5, 2, 0.05],
 		["stamina", "Enable stamina", true],
@@ -159,11 +177,13 @@ const GROUPS = {
 }
 
 static func defaults() -> Dictionary:
-	var d = {"schema_version": VERSION, "profile_name": "Willbright M14", "hud": default_hud()}
+	var d = {"schema_version": VERSION, "profile_name": "Willbright M14", "selected_weapon":"M14", "hud": default_hud()}
 	for group in GROUPS:
 		d[group] = {}
 		for f in GROUPS[group]:
 			d[group][f[0]] = f[2]
+	d.pistol = d.weapon.duplicate(true)
+	d.pistol.merge(PISTOL_OVERRIDES, true)
 	return d
 
 static func default_hud() -> Dictionary:
@@ -188,25 +208,29 @@ static func sanitize(raw: Variant) -> Dictionary:
 	var d = defaults()
 	if not raw is Dictionary:
 		return d
+	raw = migrate(raw)
 	d.profile_name = str(raw.get("profile_name", d.profile_name)).substr(0, 64)
-	for group in GROUPS:
+	d.selected_weapon = "Pistol" if raw.get("selected_weapon") == "Pistol" else "M14"
+	for group in GROUPS.keys() + ["pistol"]:
 		if not raw.get(group) is Dictionary:
 			continue
-		for f in GROUPS[group]:
-			var v = raw[group].get(f[0], f[2])
+		for f in GROUPS["weapon" if group == "pistol" else group]:
+			var v = raw[group].get(f[0], d[group][f[0]])
 			if f[2] is bool:
-				d[group][f[0]] = v if v is bool else f[2]
+				d[group][f[0]] = v if v is bool else d[group][f[0]]
 			elif f.size() == 6:
 				if (v is float or v is int) and is_finite(float(v)):
 					d[group][f[0]] = clampf(float(v), f[3], f[4])
 			elif f.size() == 4:
-				d[group][f[0]] = v if v in f[3] else f[2]
+				d[group][f[0]] = v if v in f[3] else d[group][f[0]]
 			else:
 				d[group][f[0]] = str(v).substr(0, 64)
-	d.weapon.far_range = maxf(d.weapon.range + 1.0, d.weapon.far_range)
-	d.weapon.max_spread = maxf(d.weapon.hip_spread, d.weapon.max_spread)
-	d.weapon.magazine = roundf(d.weapon.magazine)
-	d.weapon.burst_count = roundf(d.weapon.burst_count)
+	for weapon in [d.weapon, d.pistol]:
+		weapon.far_range = maxf(weapon.range + 1.0, weapon.far_range)
+		weapon.max_spread = maxf(weapon.hip_spread, weapon.max_spread)
+		weapon.magazine = roundf(weapon.magazine)
+		weapon.burst_count = roundf(weapon.burst_count)
+	d.pistol.mode = "Single"
 	if raw.get("hud") is Dictionary:
 		for k in d.hud:
 			var h = raw.hud.get(k, {})
@@ -221,3 +245,17 @@ static func sanitize(raw: Variant) -> Dictionary:
 			if h.get("visible") is bool:
 				d.hud[k].visible = h.visible
 	return d
+
+static func migrate(source: Dictionary) -> Dictionary:
+	var raw = source.duplicate(true)
+	if int(raw.get("schema_version", 1)) < 2:
+		if raw.get("aim") is Dictionary:
+			for key in ["hip_turn", "ads_turn", "scope_2", "scope_3", "scope_4", "scope_6", "scope_8"]:
+				if raw.aim.has(key): raw.aim["fire_" + key] = raw.aim[key]
+		if raw.get("movement") is Dictionary:
+			var previous = {"acceleration":22.0, "stance_time":0.2, "prone_time":0.38, "lean_time":0.13, "mantle_time":0.6}
+			for f in GROUPS.movement:
+				var v = raw.movement.get(f[0])
+				if previous.has(f[0]) and (v is float or v is int) and is_equal_approx(v, previous[f[0]]):
+					raw.movement[f[0]] = f[2]
+	return raw

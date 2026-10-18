@@ -1,5 +1,5 @@
 {
-	"checks": 48,
+	"checks": 68,
 	"engine": "4.5.1-stable (official)",
 	"failures": [],
 	"results": [
@@ -20,6 +20,22 @@
 			"passed": true
 		},
 		{
+			"check": "Version 1 migration preserves sensitivity and HUD, seeds matching fire sensitivity",
+			"passed": true
+		},
+		{
+			"check": "Movement migration improves untouched defaults and preserves custom stance timing",
+			"passed": true
+		},
+		{
+			"check": "Swipe multiplier composes with independent camera and fire sensitivities",
+			"passed": true
+		},
+		{
+			"check": "Fire sensitivity selects correct scope, with separate 1× pistol response",
+			"passed": true
+		},
+		{
 			"check": "Invalid JSON leaves active configuration unchanged",
 			"passed": true
 		},
@@ -29,6 +45,10 @@
 		},
 		{
 			"check": "Profile JSON round-trip succeeds",
+			"passed": true
+		},
+		{
+			"check": "Version 1 JSON imports through compatible migration",
 			"passed": true
 		},
 		{
@@ -73,6 +93,26 @@
 		},
 		{
 			"check": "Mantle traverses obstacle using collision-aware motion",
+			"passed": true
+		},
+		{
+			"check": "Default full-stick walk reaches 25 percent faster movement pace",
+			"passed": true
+		},
+		{
+			"check": "Firing-line barrier stops walking and jumping into dummy bay",
+			"passed": true
+		},
+		{
+			"check": "Firing-line barrier cannot be vaulted",
+			"passed": true
+		},
+		{
+			"check": "Prone player cannot crawl through the range barrier",
+			"passed": true
+		},
+		{
+			"check": "Side partition prevents entering dummy bay through movement area",
 			"passed": true
 		},
 		{
@@ -136,11 +176,51 @@
 			"passed": true
 		},
 		{
+			"check": "M14 exposes reload countdown and duration for button overlay",
+			"passed": true
+		},
+		{
+			"check": "Switch equips real pistol and cancels M14 reload",
+			"passed": true
+		},
+		{
+			"check": "Holding pistol FIRE produces exactly one bullet",
+			"passed": true
+		},
+		{
+			"check": "Repeated pistol taps have unlimited ammo without automatic reload",
+			"passed": true
+		},
+		{
+			"check": "Pistol ignores manual reload",
+			"passed": true
+		},
+		{
+			"check": "Pistol remains single-shot even if a runtime config requests auto",
+			"passed": true
+		},
+		{
+			"check": "Switch back restores M14 ammunition without granting a free reload",
+			"passed": true
+		},
+		{
+			"check": "M14 scope button cycles through 2× to 8× with real optical zoom",
+			"passed": true
+		},
+		{
+			"check": "Pistol uses iron sights instead of inheriting M14 magnification",
+			"passed": true
+		},
+		{
 			"check": "Segment collision detects a high-speed projectile crossing a thin target",
 			"passed": true
 		},
 		{
 			"check": "Projectile collision applies damage to the target",
+			"passed": true
+		},
+		{
+			"check": "In-flight bullet retains launch damage after weapon changes, and passes barrier",
 			"passed": true
 		},
 		{

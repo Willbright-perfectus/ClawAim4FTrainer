@@ -17,11 +17,75 @@ func check(ok: bool, description: String) -> void:
 	print("PASS " if ok else "FAIL ", description)
 	if not ok: failures.append(description)
 
+func touch(at: Vector2, down: bool) -> void:
+	var event = InputEventScreenTouch.new()
+	event.index = 0
+	event.position = at
+	event.pressed = down
+	Input.parse_input_event(event)
+	await frames(2)
+
+func swipe(from: Vector2, to: Vector2) -> void:
+	await touch(from,true)
+	var last = from
+	for i in range(1,7):
+		var event = InputEventScreenDrag.new()
+		event.index = 0
+		event.position = from.lerp(to,i/6.0)
+		event.relative = event.position-last
+		last = event.position
+		Input.parse_input_event(event)
+		await frames(2)
+	await touch(to,false)
+	await frames(15)
+
+func find_button(app: Node, text: String) -> Button:
+	for candidate in app.find_children("*","Button",true,false):
+		if candidate.text == text: return candidate
+	return null
+
 func run() -> void:
 	Profiles.data = Schema.defaults()
 	Profiles.data.controls.sound = false
 	var app = Main.new()
 	add_child(app)
+	await frames(5)
+	var controls_button = find_button(app,"Controls")
+	await swipe(controls_button.get_global_rect().get_center(),controls_button.get_global_rect().get_center()-Vector2(0,180))
+	check(app.page=="Train" and app.nav_scroll.scroll_vertical>60,"Sidebar swipe starting on a button scrolls without selecting that page")
+	var old_offset = app.nav_scroll.scroll_vertical
+	var history_button = find_button(app,"History")
+	var history_at = history_button.get_global_rect().get_center()
+	await frames(12)
+	await touch(history_at,true)
+	await touch(history_at,false)
+	await frames(5)
+	check(app.page=="History" and app.nav_scroll.scroll_vertical==old_offset,"Tap after swipe selects page and preserves sidebar scroll position")
+	var nav_rect = app.nav_scroll.get_global_rect()
+	await swipe(nav_rect.get_center(),nav_rect.get_center()+Vector2(0,180))
+	check(app.page=="History" and app.nav_scroll.scroll_vertical==0,"Downward sidebar swipe returns to the top without accidental selection")
+	app.show_page("Weapon")
+	await frames(5)
+	var content_scroll = app.find_child("ContentScroll",true,false)
+	var start = content_scroll.get_global_rect().position+Vector2(160,320)
+	await swipe(start,start-Vector2(0,200))
+	check(content_scroll.scroll_vertical>120 and app.page=="Weapon","Settings content supports vertical touch scrolling")
+	app.show_page("Aim")
+	await frames(5)
+	for category in ["Camera sensitivity","Fire sensitivity","Swipe sensitivity"]:
+		var tab = find_button(app,category)
+		await touch(tab.get_global_rect().get_center(),true)
+		await touch(tab.get_global_rect().get_center(),false)
+		await frames(4)
+		check(app.sensitivity_category==category,"Sensitivity category is reachable by native touch: "+category)
+	app.show_page("Weapon")
+	await frames(5)
+	var pistol = find_button(app,"Pistol")
+	await touch(pistol.get_global_rect().get_center(),true)
+	await touch(pistol.get_global_rect().get_center(),false)
+	await frames(4)
+	check(app.weapon_editor=="Pistol" and is_instance_valid(find_button(app,"Start with Pistol")),"Pistol settings and starting weapon selection are accessible")
+	app.show_page("Train")
 	await frames(5)
 	var enter: Button
 	for candidate in app.find_children("*","Button",true,false):

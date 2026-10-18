@@ -80,8 +80,8 @@ func import_text(content: String) -> String:
 		return "Invalid JSON: " + parser.get_error_message()
 	if not parser.data is Dictionary or not parser.data.get("weapon") is Dictionary:
 		return "This is not a ClawLab profile."
-	if int(parser.data.get("schema_version", 0)) != Schema.VERSION:
-		return "Unsupported profile version. Export a version 1 profile."
+	if int(parser.data.get("schema_version", 0)) not in [1, Schema.VERSION]:
+		return "Unsupported profile version. Use a ClawLab version 1 or 2 profile."
 	data = Schema.sanitize(parser.data)
 	if not save():
 		return status_message

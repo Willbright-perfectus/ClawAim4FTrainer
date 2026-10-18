@@ -1,7 +1,39 @@
 {
-	"checks": 5,
+	"checks": 13,
 	"failures": [],
 	"results": [
+		{
+			"check": "Sidebar swipe starting on a button scrolls without selecting that page",
+			"passed": true
+		},
+		{
+			"check": "Tap after swipe selects page and preserves sidebar scroll position",
+			"passed": true
+		},
+		{
+			"check": "Downward sidebar swipe returns to the top without accidental selection",
+			"passed": true
+		},
+		{
+			"check": "Settings content supports vertical touch scrolling",
+			"passed": true
+		},
+		{
+			"check": "Sensitivity category is reachable by native touch: Camera sensitivity",
+			"passed": true
+		},
+		{
+			"check": "Sensitivity category is reachable by native touch: Fire sensitivity",
+			"passed": true
+		},
+		{
+			"check": "Sensitivity category is reachable by native touch: Swipe sensitivity",
+			"passed": true
+		},
+		{
+			"check": "Pistol settings and starting weapon selection are accessible",
+			"passed": true
+		},
 		{
 			"check": "Main menu exposes an actionable range button",
 			"passed": true

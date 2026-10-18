@@ -196,7 +196,7 @@ func allows_turn(key: String) -> bool:
 	return bool(Profiles.data.controls.get("turn_" + k, false))
 
 func update_joystick(p: Vector2) -> void:
-	joystick = ((p - button_center("move")) / maxf(button_radius("move") * 0.72,1.0)).limit_length(1.0)
+	joystick = ((p - button_center("move")) / maxf(button_radius("move") * Profiles.data.controls.joystick_reach,1.0)).limit_length(1.0)
 	if joystick.length() < 0.08:
 		joystick = Vector2.ZERO
 	move_motion.emit(joystick)
@@ -230,6 +230,8 @@ func text_at(p: Vector2, text: String, color: Color = WHITE, fs: int = 16, cente
 func _draw() -> void:
 	if font == null:
 		return
+	if not editing and player != null and player.ads > 0.85 and player.magnification() >= 2:
+		draw_scope()
 	if editing:
 		draw_rect(Rect2(Vector2.ZERO,size), Color(0.02,0.04,0.06,0.8))
 		var area = layout_rect()
@@ -251,9 +253,19 @@ func _draw() -> void:
 		if k == "move":
 			draw_circle(p + joystick * r * 0.6, r * 0.28, Color(MINT,alpha*0.8))
 			draw_arc(p,r*0.65,0,TAU,32,Color(WHITE,0.1),1,true)
+		elif k == "reload" and not editing and player != null and player.reload_left > 0:
+			var progress = 1.0 - player.reload_left / maxf(player.reload_total,0.001)
+			draw_arc(p,r*0.84,-PI/2,-PI/2+TAU*progress,48,MINT,3,true)
+			text_at(p+Vector2(0,r*0.08),"%.1fs" % player.reload_left,WHITE,int(clampf(r*0.46,12,25)),true)
+			text_at(p+Vector2(0,r*0.57),"RELOAD",MINT,int(clampf(r*0.24,9,13)),true)
 		else:
 			draw_icon(k,p+Vector2(0,-r*0.12),r*0.38,Color(WHITE,alpha))
-			text_at(p+Vector2(0,r*0.56), LABELS[k], Color(WHITE,alpha), int(clampf(r*0.27,10,15)),true)
+			var caption = LABELS[k]
+			if not editing and player != null:
+				if k == "scope": caption = "%d×" % player.magnification()
+				elif k == "switch": caption = "M14" if player.weapon_slot == "Pistol" else "PISTOL"
+				elif k == "reload" and player.weapon_slot == "Pistol": caption = "∞"
+			text_at(p+Vector2(0,r*0.56), caption, Color(WHITE,alpha), int(clampf(r*0.27,10,15)),true)
 	if editing:
 		text_at(size*0.5, "Drag any control • Select a button to adjust it", Color("7e9ba5"),19,true)
 		return
@@ -275,9 +287,9 @@ func _draw() -> void:
 	draw_style_box(pause_style,pause_rect)
 	text_at(pause_rect.position+Vector2(45,26),"PAUSE",WHITE,15,true)
 	if player != null:
-		text_at(Vector2(size.x*0.5,27),"%s   /   %s" % [Profiles.data.weapon.name,Profiles.data.controls.mode],WHITE,17,true)
-		var ammo = "∞" if Profiles.data.drill.infinite_ammo else str(player.ammo)
-		text_at(Vector2(size.x*0.5,size.y-22),"%s / %d    %s    %s" % [ammo,Profiles.data.weapon.magazine,player.stance.to_upper(),player.state_label()],WHITE,16,true)
+		text_at(Vector2(size.x*0.5,27),"%s   /   %s" % [player.weapon().name,Profiles.data.controls.mode],WHITE,17,true)
+		var ammo = "∞  SINGLE / NO RELOAD" if player.weapon_slot == "Pistol" else "%s / %d" % ["∞" if player.unlimited_ammo() else str(player.ammo),player.weapon().magazine]
+		text_at(Vector2(size.x*0.5,size.y-22),"%s    %s    %s" % [ammo,player.stance.to_upper(),player.state_label()],WHITE,16,true)
 		var bw = 150.0
 		draw_rect(Rect2(size.x*0.5-bw/2,size.y-48,bw,4),Color(0.2,0.3,0.34,0.7))
 		draw_rect(Rect2(size.x*0.5-bw/2,size.y-48,bw*player.stamina,4),MINT)
@@ -295,6 +307,27 @@ func _draw() -> void:
 			draw_arc(contacts[id].last,20,0,TAU,24,MINT,1.5)
 	if toast_time > 0:
 		text_at(Vector2(size.x*0.5,size.y*0.70),toast,Color("ffcb91"),18,true)
+
+func draw_scope() -> void:
+	var c = size*0.5
+	var radius = size.y*0.36
+	# Shade outside the optic with a single bounded triangle strip, then draw
+	# the rim and fine reticle. HUD buttons render afterward and stay readable.
+	for i in range(64):
+		var a = TAU*i/64.0
+		var b = TAU*(i+1)/64.0
+		var va = Vector2(cos(a),sin(a))
+		var vb = Vector2(cos(b),sin(b))
+		draw_colored_polygon(PackedVector2Array([c+va*radius,c+va*size.length(),c+vb*size.length(),c+vb*radius]),Color(0.015,0.025,0.035,0.88))
+	draw_arc(c,radius,0,TAU,96,Color("39535e"),8,true)
+	draw_arc(c,radius-6,0,TAU,96,Color("8cc7c0"),1,true)
+	for dir in [Vector2.LEFT,Vector2.RIGHT,Vector2.UP,Vector2.DOWN]:
+		draw_line(c+dir*18,c+dir*(radius-10),Color(0.03,0.06,0.07,0.85),1.5,true)
+		for tick in range(1,5):
+			var at = c+dir*(radius*tick/6.0)
+			var side = Vector2(-dir.y,dir.x)*4
+			draw_line(at-side,at+side,Color("364a50"),1,true)
+	text_at(c+Vector2(0,radius-22),"M14  •  %d×" % player.magnification(),MINT,16,true)
 
 func panel_style() -> StyleBoxFlat:
 	var s = StyleBoxFlat.new()

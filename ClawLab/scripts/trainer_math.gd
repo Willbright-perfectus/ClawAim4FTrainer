@@ -6,17 +6,19 @@ static func jump_speed(gravity: float, height: float) -> float:
 static func vertical_fov(horizontal: float, aspect: float) -> float:
 	return rad_to_deg(2.0 * atan(tan(deg_to_rad(horizontal) * 0.5) / maxf(aspect, 0.1)))
 
-static func scope_factor(aim: Dictionary) -> float:
-	var mag = int(str(aim.scope).trim_suffix("×"))
-	return float(aim.get("scope_" + str(mag), 1.0))
+static func scope_factor(aim: Dictionary, firing: bool = false, magnification: int = 0) -> float:
+	var mag = int(str(aim.scope).trim_suffix("×")) if magnification == 0 else magnification
+	return float(aim.get(("fire_" if firing else "") + "scope_" + str(mag), 1.0))
 
-static func turn_gain(aim: Dictionary, ads: float, requested: bool) -> float:
+static func turn_gain(aim: Dictionary, ads: float, requested: bool, firing: bool = false, magnification: int = 0) -> float:
 	var t = ads
 	if aim.transition == "Instant":
 		t = 1.0 if requested else 0.0
 	elif aim.transition == "After ADS":
 		t = 1.0 if ads > 0.99 else 0.0
-	return lerpf(aim.hip_turn, aim.ads_turn * scope_factor(aim), t)
+	var hip = aim.fire_hip_turn if firing else aim.hip_turn
+	var scoped = aim.fire_ads_turn if firing else aim.ads_turn
+	return aim.swipe_gain * lerpf(hip, scoped * scope_factor(aim, firing, magnification), t)
 
 static func damage(weapon: Dictionary, zone: String, distance: float, armor: float) -> float:
 	var base = float(weapon.get(zone + "_damage", weapon.damage))

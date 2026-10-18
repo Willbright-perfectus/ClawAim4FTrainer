@@ -161,6 +161,7 @@ func build_room() -> void:
 		label3("%d M" % (10-z),Vector3(7,0.7,z),55)
 	label3("CLAWLAB  /  TRAINING HALL",Vector3(0,5,-84.5),160)
 	label3("PRECISION    •    CONTROL    •    CONSISTENCY",Vector3(0,3.4,-84.4),70)
+	build_range_barrier()
 	# Obstacle bay: solid obstacles and a low tunnel for meaningful stance collision.
 	for data in [[Vector3(-14,0.35,2),Vector3(4,0.7,2)], [Vector3(-14,0.55,-5),Vector3(4,1.1,2)], [Vector3(-14,0.35,-12),Vector3(4,0.7,2)]]:
 		box(data[0],data[1],Color("746c60"))
@@ -176,6 +177,29 @@ func build_room() -> void:
 			box(Vector3(n*0.5,2.2,-9.88),Vector3(0.015,4.2,0.015),Color("566673"),false)
 		for n in range(1,9):
 			box(Vector3(0,n*0.5,-9.88),Vector3(5.8,0.015,0.015),Color("566673"),false)
+
+func build_range_barrier() -> void:
+	# A dedicated collision layer keeps every stance behind the firing line,
+	# while shots pass into the target bay. The movement bay stays accessible.
+	for data in [[Vector3(11.25,6,6.8),Vector3(37.5,12,0.24)], [Vector3(-7.5,6,-39.1),Vector3(0.24,12,92)]]:
+		var barrier = StaticBody3D.new()
+		barrier.name = "RangeBarrier"
+		barrier.position = data[0]
+		barrier.collision_layer = 8
+		barrier.collision_mask = 0
+		barrier.set_meta("range_barrier", true)
+		var shape = CollisionShape3D.new()
+		shape.shape = BoxShape3D.new()
+		shape.shape.size = data[1]
+		barrier.add_child(shape)
+		add_child(barrier)
+		var foot = Vector3(data[1].x,0.16,data[1].z)
+		box(Vector3(data[0].x,0.08,data[0].z),foot,Color("e8af66"),false)
+		box(Vector3(data[0].x,0.72,data[0].z),Vector3(data[1].x,0.055,data[1].z),Color("6cdac3"),false)
+	for x in [-7.5,0,7.5,15,22.5,29.5]:
+		box(Vector3(x,0.4,6.8),Vector3(0.1,0.8,0.1),Color("738e99"),false)
+	var sign = label3("FIRING LINE  /  TARGET BAY CLOSED",Vector3(0,2.6,3),48,Color("efbf81"))
+	sign.pixel_size = 0.003
 
 func build_targets() -> void:
 	if mode in ["Movement Course","Recoil Board","Calibration"]:
@@ -240,13 +264,15 @@ func build_sound() -> void:
 	sample.data = bytes
 	sound.stream = sample
 
-func spawn_bullet(origin: Vector3, direction: Vector3, speed: float) -> void:
+func spawn_bullet(origin: Vector3, direction: Vector3, speed: float, weapon_config: Dictionary = {}) -> void:
 	var b = bullets[bullet_cursor]
 	bullet_cursor = (bullet_cursor+1)%bullets.size()
 	b.active = true
 	b.pos = origin
 	b.origin = origin
 	b.velocity = direction*speed
+	# Snapshot prevents an in-flight pistol round acquiring rifle damage on switch.
+	b.weapon = (player.weapon() if weapon_config.is_empty() else weapon_config).duplicate(true)
 	b.life = 3.0
 	b.mesh.position = origin
 	b.mesh.visible = Profiles.data.performance.tracers
@@ -260,8 +286,8 @@ func step_bullets(dt: float) -> void:
 		if not b.active:
 			continue
 		b.life -= dt
-		var next = b.pos+b.velocity*dt+Vector3.DOWN*Profiles.data.weapon.bullet_gravity*dt*dt*0.5
-		b.velocity.y -= Profiles.data.weapon.bullet_gravity*dt
+		var next = b.pos+b.velocity*dt+Vector3.DOWN*b.weapon.bullet_gravity*dt*dt*0.5
+		b.velocity.y -= b.weapon.bullet_gravity*dt
 		var q = PhysicsRayQueryParameters3D.create(b.pos,next,3)
 		q.collide_with_areas = true
 		var hit = state.intersect_ray(q)
@@ -273,7 +299,7 @@ func step_bullets(dt: float) -> void:
 				var t = body.get_meta("target")
 				var zone = body.get_meta("zone")
 				if is_instance_valid(t) and t.alive:
-					t.take_hit(Math.damage(Profiles.data.weapon,zone,b.origin.distance_to(hit.position),Profiles.data.drill.armor),zone)
+					t.take_hit(Math.damage(b.weapon,zone,b.origin.distance_to(hit.position),Profiles.data.drill.armor),zone)
 			else:
 				var mark = impacts[impact_cursor]
 				impact_cursor = (impact_cursor+1)%impacts.size()
@@ -331,13 +357,13 @@ func _physics_process(dt: float) -> void:
 		if prompt_time<=0:
 			next_prompt()
 	elif mode=="Calibration":
-		prompt = "Heading %03d°  •  Hip %.0f°/swipe  •  ADS %.0f°/swipe" % [posmod(int(rad_to_deg(-player.rotation.y)),360), Profiles.data.aim.hip_turn,Profiles.data.aim.ads_turn]
+		prompt = "Heading %03d°  •  %s %.0f°/swipe  •  %d×" % [posmod(int(rad_to_deg(-player.rotation.y)),360), "Firing" if player.firing_sensitivity() else "Camera", Math.turn_gain(Profiles.data.aim,player.ads,player.ads_requested(),player.firing_sensitivity(),player.magnification()), player.magnification()]
 	elif mode=="Movement Course":
 		step_course()
 	var fi = Profiles.data.drill.flinch_interval
 	if fi > 0 and elapsed-last_flinch >= fi:
 		last_flinch = elapsed
-		player.recoil.y += deg_to_rad(Profiles.data.weapon.flinch*0.6)
+		player.recoil.y += deg_to_rad(player.weapon().flinch*0.6)
 	if remaining<=0:
 		finish()
 
@@ -368,7 +394,7 @@ func record_action(action: String) -> void:
 			wrong_actions += 1
 
 func setup_course() -> void:
-	checkpoints = [Vector3(-14,0,5),Vector3(-14,0,-1),Vector3(-14,0,-8),Vector3(-14,0,-15),Vector3(-14,0,-19),Vector3(-14,0,-23),Vector3(-7,0,-29),Vector3(0,0,-29)]
+	checkpoints = [Vector3(-14,0,5),Vector3(-14,0,-1),Vector3(-14,0,-8),Vector3(-14,0,-15),Vector3(-14,0,-19),Vector3(-14,0,-23),Vector3(-20,0,-23),Vector3(-20,0,5)]
 	marker = MeshInstance3D.new()
 	var cylinder = CylinderMesh.new()
 	cylinder.top_radius = 0.75

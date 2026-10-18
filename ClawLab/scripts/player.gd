@@ -1,6 +1,7 @@
 extends CharacterBody3D
 
 const Math = preload("res://scripts/trainer_math.gd")
+const Schema = preload("res://scripts/config_schema.gd")
 var arena: Node
 var hud: Node
 var camera: Camera3D
@@ -8,6 +9,10 @@ var pivot: Node3D
 var collider: CollisionShape3D
 var flashlight: SpotLight3D
 var viewgun: Node3D
+var optic: Node3D
+var weapon_slot = "M14"
+var pending_weapon = ""
+var rifle_ammo = 30
 var active = true
 var movement = Vector2.ZERO
 var keyboard = Vector2.ZERO
@@ -53,7 +58,7 @@ var rng = RandomNumberGenerator.new()
 
 func _ready() -> void:
 	collision_layer = 4
-	collision_mask = 1
+	collision_mask = 9 # World + player-only range barrier. Bullets use layers 1/2.
 	floor_snap_length = 0.16
 	floor_stop_on_slope = true
 	collider = CollisionShape3D.new()
@@ -78,18 +83,26 @@ func _ready() -> void:
 	flashlight.shadow_enabled = false
 	flashlight.visible = false
 	camera.add_child(flashlight)
+	weapon_slot = Profiles.data.selected_weapon
+	rifle_ammo = int(Profiles.data.weapon.magazine)
+	ammo = rifle_ammo if weapon_slot == "M14" else 1
 	build_viewgun()
-	ammo = int(Profiles.data.weapon.magazine)
 	rng.seed = int(Profiles.data.drill.seed)
 	update_camera(0.016)
 
 func build_viewgun() -> void:
+	if is_instance_valid(viewgun):
+		camera.remove_child(viewgun)
+		viewgun.queue_free()
 	viewgun = Node3D.new()
 	camera.add_child(viewgun)
 	var mat = StandardMaterial3D.new()
 	mat.albedo_color = Color("243641")
 	mat.roughness = 0.75
-	for part in [[Vector3(0,0,0),Vector3(0.075,0.08,0.30)], [Vector3(0,0.025,-0.25),Vector3(0.025,0.025,0.25)], [Vector3(0,-0.08,0),Vector3(0.05,0.13,0.08)], [Vector3(0,0.075,-0.04),Vector3(0.035,0.035,0.06)]]:
+	var parts = [[Vector3(0,0,0),Vector3(0.075,0.08,0.30)], [Vector3(0,0.025,-0.25),Vector3(0.025,0.025,0.25)], [Vector3(0,-0.08,0),Vector3(0.05,0.13,0.08)], [Vector3(0,0.075,-0.04),Vector3(0.035,0.035,0.06)]]
+	if weapon_slot == "Pistol":
+		parts = [[Vector3(0,0,0),Vector3(0.065,0.07,0.18)], [Vector3(0,-0.07,0.05),Vector3(0.055,0.14,0.065)], [Vector3(0,0.05,-0.06),Vector3(0.02,0.02,0.02)]]
+	for part in parts:
 		var mesh = MeshInstance3D.new()
 		var box = BoxMesh.new()
 		box.size = part[1]
@@ -98,6 +111,61 @@ func build_viewgun() -> void:
 		mesh.position = part[0]
 		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		viewgun.add_child(mesh)
+	optic = Node3D.new()
+	viewgun.add_child(optic)
+	for ends in [false, true]:
+		var tube = MeshInstance3D.new()
+		var cylinder = CylinderMesh.new()
+		cylinder.top_radius = 0.045 if not ends else 0.037
+		cylinder.bottom_radius = cylinder.top_radius
+		cylinder.height = 0.15 if not ends else 0.003
+		cylinder.radial_segments = 24
+		tube.mesh = cylinder
+		tube.rotation.x = PI / 2
+		tube.position = Vector3(0,0.095,-0.08 if not ends else -0.003)
+		var surface = StandardMaterial3D.new()
+		surface.albedo_color = Color("21343e") if not ends else Color("60b6b1")
+		surface.metallic = 0.3
+		tube.material_override = surface
+		optic.add_child(tube)
+
+func weapon() -> Dictionary:
+	return Profiles.data.pistol if weapon_slot == "Pistol" else Profiles.data.weapon
+
+func unlimited_ammo() -> bool:
+	return weapon_slot == "Pistol" or Profiles.data.drill.infinite_ammo
+
+func fire_mode() -> String:
+	return "Single" if weapon_slot == "Pistol" else str(weapon().mode)
+
+func magnification() -> int:
+	return 1 if weapon_slot == "Pistol" else int(str(Profiles.data.aim.scope).trim_suffix("×"))
+
+func firing_sensitivity() -> bool:
+	return bool(pressed.get("fire",false)) or shot_queue > 0 or since_shot < 0.12
+
+func switch_weapon() -> void:
+	if switch_left > 0: return
+	pending_weapon = "M14" if weapon_slot == "Pistol" else "Pistol"
+	var next = Profiles.data.weapon if pending_weapon == "M14" else Profiles.data.pistol
+	switch_left = weapon().holster + next.switch_time
+	reload_left = 0
+	shot_queue = 0
+	gear_ready = false
+	if switch_left <= 0: complete_switch()
+
+func complete_switch() -> void:
+	if pending_weapon.is_empty(): return
+	if weapon_slot == "M14": rifle_ammo = ammo
+	weapon_slot = pending_weapon
+	pending_weapon = ""
+	ammo = rifle_ammo if weapon_slot == "M14" else 1
+	shot_queue = 0
+	shot_clock = 0
+	recoil = Vector2.ZERO
+	spread_extra = 0
+	build_viewgun()
+	if hud != null: hud.notify(weapon().name + (" • single tap / unlimited ammo" if weapon_slot == "Pistol" else " • " + Profiles.data.aim.scope))
 
 func freeze() -> void:
 	active = false
@@ -116,7 +184,7 @@ func on_look(delta: Vector2, speed: float) -> void:
 	if not active:
 		return
 	var a = Profiles.data.aim
-	var gain = Math.turn_gain(a, ads, ads_requested())
+	var gain = Math.turn_gain(a, ads, ads_requested(), firing_sensitivity(), magnification())
 	if a.acceleration:
 		gain *= 1.0 + a.accel_strength * clampf(speed, 0, 4)
 	if a.assist and arena != null and arena.aim_near_target():
@@ -146,8 +214,8 @@ func on_action(action: String, down: bool) -> void:
 		elif action.begins_with("lean_") and cfg.lean_mode == "Hybrid" and held_time < cfg.hybrid_ms / 1000.0:
 			var dir = -1 if action == "lean_left" else 1
 			lean_toggle = 0 if lean_toggle == dir else dir
-		if action == "fire" and cfg.release_fire and Profiles.data.weapon.mode != "Auto":
-			shot_queue = int(Profiles.data.weapon.burst_count) if Profiles.data.weapon.mode == "Burst" else 1
+		if action == "fire" and cfg.release_fire and fire_mode() != "Auto" and switch_left <= 0:
+			shot_queue = int(weapon().burst_count) if fire_mode() == "Burst" else 1
 		if action == "ads":
 			ads_suppressed = false
 		return
@@ -162,6 +230,7 @@ func on_action(action: String, down: bool) -> void:
 			if cfg.lean_mode == "Press":
 				lean_toggle = 0 if lean_toggle == last_lean else last_lean
 		"fire":
+			if switch_left > 0: return
 			ads_suppressed = false
 			if gear_ready:
 				use_gear()
@@ -169,7 +238,7 @@ func on_action(action: String, down: bool) -> void:
 			if reload_left > 0 and cfg.reload_cancel in ["Fire","Hybrid"]:
 				reload_left = 0
 			if not cfg.release_fire:
-				shot_queue = int(Profiles.data.weapon.burst_count) if Profiles.data.weapon.mode == "Burst" else 1
+				shot_queue = int(weapon().burst_count) if fire_mode() == "Burst" else 1
 		"reload":
 			if reload_left > 0 and cfg.reload_cancel in ["Reload","Hybrid"]:
 				reload_left = 0
@@ -205,15 +274,15 @@ func on_action(action: String, down: bool) -> void:
 		"breath":
 			pass
 		"scope":
-			var scopes = ["1×","2×","3×","4×","6×","8×"]
+			if weapon_slot == "Pistol":
+				if hud != null: hud.notify("Pistol uses 1× iron sights • SWITCH for M14 optics")
+				return
+			var scopes = Schema.SCOPES
 			Profiles.data.aim.scope = scopes[(scopes.find(Profiles.data.aim.scope)+1)%scopes.size()]
 			if hud != null:
 				hud.notify("Scope " + Profiles.data.aim.scope)
 		"switch":
-			switch_left = Profiles.data.weapon.holster + Profiles.data.weapon.switch_time
-			reload_left = 0
-			if hud != null:
-				hud.notify("Weapon switch drill")
+			switch_weapon()
 		"flashlight":
 			flashlight.visible = not flashlight.visible
 		"gear", "gadget":
@@ -225,6 +294,7 @@ func on_action(action: String, down: bool) -> void:
 				use_gear()
 
 func use_gear() -> void:
+	if switch_left > 0: return
 	if gear_timer > 0:
 		if hud != null:
 			hud.notify("Equipment cooldown %.1fs" % gear_timer)
@@ -260,9 +330,9 @@ func ads_requested() -> bool:
 	return explicit_ads() or (c.lean_ads and lean_requested()!=0) or (quick and (bool(pressed.get("fire",false)) or shot_queue>0))
 
 func start_reload() -> void:
-	if reload_left > 0 or ammo >= int(Profiles.data.weapon.magazine) or Profiles.data.drill.infinite_ammo:
+	if reload_left > 0 or switch_left > 0 or ammo >= int(weapon().magazine) or unlimited_ammo():
 		return
-	reload_total = Profiles.data.weapon.empty_reload if ammo == 0 else Profiles.data.weapon.reload
+	reload_total = weapon().empty_reload if ammo == 0 else weapon().reload
 	reload_left = reload_total
 	shot_queue = 0
 
@@ -273,7 +343,7 @@ func can_stand(height: float, at_position: Vector3) -> bool:
 	var q = PhysicsShapeQueryParameters3D.new()
 	q.shape = shape
 	q.transform = Transform3D(Basis.IDENTITY,at_position+Vector3(0,height/2+0.025,0))
-	q.collision_mask = 1
+	q.collision_mask = 9
 	q.exclude = [get_rid()]
 	q.margin = 0.005
 	return get_world_3d().direct_space_state.intersect_shape(q,1).is_empty()
@@ -313,9 +383,9 @@ func try_mantle() -> bool:
 		return false
 	var forward = -global_basis.z
 	var origin = global_position+Vector3(0,0.45,0)
-	var q = PhysicsRayQueryParameters3D.create(origin,origin+forward*0.95,1,[get_rid()])
+	var q = PhysicsRayQueryParameters3D.create(origin,origin+forward*0.95,9,[get_rid()])
 	var hit = get_world_3d().direct_space_state.intersect_ray(q)
-	if hit.is_empty():
+	if hit.is_empty() or hit.collider.has_meta("range_barrier"):
 		return false
 	var top_origin = hit.position + forward*0.45 + Vector3.UP*m.mantle_height
 	var top = get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(top_origin,top_origin-Vector3.UP*(m.mantle_height+0.2),1,[get_rid()]))
@@ -340,11 +410,14 @@ func _physics_process(dt: float) -> void:
 		return
 	elapsed += dt
 	var m = Profiles.data.movement
-	var w = Profiles.data.weapon
+	var w = weapon()
 	var c = Profiles.data.controls
 	jump_timer = maxf(0,jump_timer-dt)
 	jump_fatigue = maxf(0,jump_fatigue-dt*0.08)
 	switch_left = maxf(0,switch_left-dt)
+	if switch_left == 0 and not pending_weapon.is_empty():
+		complete_switch()
+		w = weapon()
 	gear_timer = maxf(0,gear_timer-dt)
 	dive_timer = maxf(0,dive_timer-dt)
 	if reload_left > 0:
@@ -380,6 +453,7 @@ func _physics_process(dt: float) -> void:
 		speed = m.silent
 	if ads > 0.01:
 		speed = lerpf(speed,minf(speed,m.ads_walk),ads)
+	speed *= m.pace
 	if mantle_timer > 0:
 		mantle_timer = maxf(0,mantle_timer-dt)
 		var t = 1.0-mantle_timer/m.mantle_time
@@ -395,7 +469,7 @@ func _physics_process(dt: float) -> void:
 		elif velocity.y < 0:
 			velocity.y = -0.5
 		var wanted = global_basis * Vector3(move.x,0,move.y) * speed
-		var acceleration = m.acceleration * (1.0 if grounded else m.air_control)
+		var acceleration = m.acceleration * m.pace * (1.0 if grounded else m.air_control)
 		if dive_timer <= 0:
 			velocity.x = move_toward(velocity.x,wanted.x,acceleration*dt)
 			velocity.z = move_toward(velocity.z,wanted.z,acceleration*dt)
@@ -410,14 +484,14 @@ func _physics_process(dt: float) -> void:
 	spread_extra = maxf(0,spread_extra-w.spread_recovery*dt)
 	if since_shot > w.recovery_delay:
 		recoil = recoil.move_toward(Vector2.ZERO,deg_to_rad(w.recovery)*dt)
-	var fire = bool(pressed.get("fire",false)) and w.mode=="Auto"
+	var fire = bool(pressed.get("fire",false)) and fire_mode()=="Auto"
 	var quick = c.quick_ads_ops if c.mode=="Operations" else c.quick_ads_war
 	var allowed = reload_left<=0 and switch_left<=0 and not sprinting and sprint_delay<=0 and mantle_timer<=0 and not gear_ready and (not quick or ads>=0.99)
 	shot_clock -= dt
 	if allowed and (fire or shot_queue>0):
 		var loops = 0
 		while shot_clock <= 0 and loops<4 and (fire or shot_queue>0):
-			if ammo <= 0 and not Profiles.data.drill.infinite_ammo:
+			if ammo <= 0 and not unlimited_ammo():
 				if c.auto_reload:
 					start_reload()
 				break
@@ -450,14 +524,14 @@ func _process(dt: float) -> void:
 
 func update_camera(dt: float) -> void:
 	var m = Profiles.data.movement
-	var w = Profiles.data.weapon
+	var w = weapon()
 	var target_eye = {"stand":1.62,"crouch":1.0,"prone":0.40}[stance]
 	var transition = m.prone_time if stance=="prone" or eye_height<0.8 else m.stance_time
 	eye_height = move_toward(eye_height,target_eye,1.3*dt/transition)
 	lean = move_toward(lean,float(lean_requested()),dt/maxf(m.lean_time,0.01))
 	var eye = global_position+Vector3.UP*eye_height
 	var offset = global_basis.x*lean*m.lean_distance
-	var q = PhysicsRayQueryParameters3D.create(eye,eye+offset,1,[get_rid()])
+	var q = PhysicsRayQueryParameters3D.create(eye,eye+offset,9,[get_rid()])
 	var hit = get_world_3d().direct_space_state.intersect_ray(q)
 	if not hit.is_empty():
 		offset *= clampf(eye.distance_to(hit.position)/maxf(offset.length(),0.001)-0.12,0,1)
@@ -468,7 +542,7 @@ func update_camera(dt: float) -> void:
 	if velocity.length()>0.3:
 		sway *= 1.0+w.movement_stability*0.25
 	pivot.rotation = Vector3(clampf(pitch+recoil.y+sway.y,deg_to_rad(-88),deg_to_rad(88)),recoil.x+sway.x,-deg_to_rad(m.lean_angle)*lean)
-	var mag = int(str(Profiles.data.aim.scope).trim_suffix("×"))
+	var mag = magnification()
 	var fov = float(Profiles.data.aim.fov)
 	var zoomed = rad_to_deg(2*atan(tan(deg_to_rad(fov)*0.5)/(float(mag)*1.15)))
 	var aspect = get_viewport().get_visible_rect().size.x/maxf(get_viewport().get_visible_rect().size.y,1)
@@ -478,11 +552,12 @@ func update_camera(dt: float) -> void:
 	var shake = exp(-since_shot*25.0)*w.sight_stability*0.006
 	viewgun.position += Vector3(sin(elapsed*77.0)*shake,cos(elapsed*93.0)*shake,shake)
 	viewgun.rotation.x = -0.4 if reload_left>0 else 0.0
-	viewgun.visible = switch_left<=0 and not gear_ready
+	viewgun.visible = switch_left<=0 and not gear_ready and not (mag >= 2 and ads > 0.85)
+	optic.visible = weapon_slot == "M14" and mag >= 2
 
 func shoot() -> void:
-	var w = Profiles.data.weapon
-	if not Profiles.data.drill.infinite_ammo:
+	var w = weapon()
+	if not unlimited_ammo():
 		ammo -= 1
 	shot_number += 1
 	since_shot = 0
@@ -499,7 +574,7 @@ func shoot() -> void:
 	var dir = (Vector3(cos(angle)*radius,sin(angle)*radius,-1)).normalized()
 	dir = camera.global_basis*dir
 	if arena != null:
-		arena.spawn_bullet(camera.global_position,dir,w.velocity)
+		arena.spawn_bullet(camera.global_position,dir,w.velocity,w)
 	var vm = w.vertical_recoil if w.mode=="Auto" else w.single_vertical
 	var hm = w.horizontal_recoil if w.mode=="Auto" else w.single_horizontal
 	var breath_scale = w.breath_recoil if breathing else 1.0
@@ -513,7 +588,8 @@ func shoot() -> void:
 
 func state_label() -> String:
 	if reload_left>0:
-		return "RELOAD %.1fs" % reload_left
+		return "RELOADING"
+	if switch_left > 0: return "SWITCHING"
 	if mantle_timer>0:
 		return "VAULTING"
 	if sprinting:
@@ -521,5 +597,5 @@ func state_label() -> String:
 	if gear_ready:
 		return "EQUIPMENT READY"
 	if ads>0.9:
-		return "ADS " + Profiles.data.aim.scope
+		return "ADS %d×" % magnification()
 	return "HIP FIRE"
