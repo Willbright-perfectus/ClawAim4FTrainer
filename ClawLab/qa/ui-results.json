@@ -1,0 +1,26 @@
+{
+	"checks": 5,
+	"failures": [],
+	"results": [
+		{
+			"check": "Main menu exposes an actionable range button",
+			"passed": true
+		},
+		{
+			"check": "A real screen-touch tap activates native menu controls",
+			"passed": true
+		},
+		{
+			"check": "Emulated mouse does not duplicate a real HUD touch",
+			"passed": true
+		},
+		{
+			"check": "Application pause clears real touch input before freezing",
+			"passed": true
+		},
+		{
+			"check": "Resume never restores a previously held fire input",
+			"passed": true
+		}
+	]
+}
