@@ -1,0 +1,13 @@
+.godot/
+.DS_Store
+build/
+*.apk
+*.aab
+*.keystore
+*.jks
+.env
+export_credentials.cfg
+qa/*.log
+qa/screenshots/
+__pycache__/
+*.pyc
